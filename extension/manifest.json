@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "CLAG Downloader Integration",
+  "version": "1.0.0",
+  "author": "Wael Sayed",
+  "description": "Catch downloads, sniff media streams, and accelerate downloads with CLAG Downloader. Made by Wael Sayed.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "downloads",
+    "webRequest",
+    "storage",
+    "contextMenus",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

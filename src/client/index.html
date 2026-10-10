@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0B0F19" />
+    <meta name="description" content="Next-Generation Multi-Connection Download Manager & Universal Media Grabber" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>CLAG Downloader</title>
+  </head>
+  <body class="bg-darkbg-primary text-gray-100 min-h-screen antialiased select-none font-sans overflow-x-hidden">
+    <div id="root" class="min-h-screen flex flex-col"></div>
+    <script type="module" src="/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js').catch(err => {
+            console.log('SW registration note:', err);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>

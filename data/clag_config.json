@@ -1,0 +1,21 @@
+{
+  "downloadDir": "C:\\Users\\ahmed\\Downloads\\CLAG",
+  "maxConcurrentDownloads": 3,
+  "defaultConnections": 16,
+  "speedLimitKBps": 0,
+  "autoStartDownloads": true,
+  "clipboardMonitoring": true,
+  "theme": "dark",
+  "enableSoundAlerts": true,
+  "clickNLoadEnabled": true,
+  "clickNLoadPort": 9666,
+  "apiPort": 8989,
+  "downloadSubtitles": true,
+  "subtitlesFormat": "txt",
+  "subtitleLanguages": [
+    "ar",
+    "en",
+    "de"
+  ],
+  "subtitlesInSubfolder": true
+}
