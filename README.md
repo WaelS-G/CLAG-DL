@@ -3,7 +3,8 @@ title: CLAG Downloader Pro
 emoji: ⚡
 colorFrom: blue
 colorTo: cyan
-sdk: docker
+sdk: gradio
+app_file: app.py
 app_port: 7860
 pinned: false
 ---

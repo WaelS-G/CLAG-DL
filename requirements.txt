@@ -1,0 +1,5 @@
+yt-dlp
+gradio
+requests
+mutagen
+pillow
