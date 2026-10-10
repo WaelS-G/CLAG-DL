@@ -54,16 +54,68 @@ if (sourceDist) {
   };
   fs.writeFileSync(path.join(webDir, 'vercel.json'), JSON.stringify(webVercelConfig, null, 2));
 
-  // Standalone web package.json for dist/web
+  // Standalone web package.json for dist/web with Node web server support
   const webPkg = {
     name: 'clag-downloader-web',
     version: '1.0.0',
     type: 'module',
+    main: 'server.js',
     scripts: {
-      build: 'echo Production static bundle and serverless API ready',
+      start: 'node server.js',
+      build: 'echo Production web bundle ready',
+    },
+    dependencies: {
+      cors: '^2.8.5',
+      express: '^4.21.2',
     },
   };
   fs.writeFileSync(path.join(webDir, 'package.json'), JSON.stringify(webPkg, null, 2));
+
+  // Copy or create standalone server.js for Render / Node Web Service hosting
+  const serverCode = `import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+const routeHandler = (modulePath) => async (req, res) => {
+  try {
+    const mod = await import(modulePath);
+    const handler = mod.default || mod;
+    return handler(req, res);
+  } catch (err) {
+    console.error('Error handling ' + req.path + ':', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+app.all('/api/probe', routeHandler('./api/probe.js'));
+app.all('/api/resolve', routeHandler('./api/resolve.js'));
+app.all('/api/downloads', routeHandler('./api/downloads.js'));
+app.all('/api/settings', routeHandler('./api/settings.js'));
+app.all('/api/stream', routeHandler('./api/stream.js'));
+app.all('/api/batch/parse', routeHandler('./api/batch/parse.js'));
+app.all('/api/system/open', routeHandler('./api/system/open.js'));
+
+app.use(express.static(__dirname));
+
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('CLAG Downloader Web Engine running on port ' + PORT);
+});
+`;
+  fs.writeFileSync(path.join(webDir, 'server.js'), serverCode);
 
   // Also ensure extension zip is copied to dist folders
   const extZip = path.join(rootDir, 'public', 'clag-downloader-extension.zip');
