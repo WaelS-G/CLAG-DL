@@ -1,11 +1,11 @@
-# CLAG Downloader - Production Container for Render.com & Docker
+# CLAG Downloader - Production Container for Docker, Hugging Face Spaces & Cloud Hosts
 # Embeds Node.js 20, Python 3, yt-dlp, and FFmpeg
 FROM node:20-bookworm-slim
 
 # Prevent interactive prompts during apt install
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV PORT=10000
+ENV PORT=7860
 
 # Install system dependencies: Python 3, pip, FFmpeg, curl, ca-certificates
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,12 +36,14 @@ COPY . .
 # Build Vite client and TypeScript server bundles
 RUN npm run build
 
-# Expose Render default port
+# Expose Hugging Face (7860) and standard cloud ports (8989, 10000)
+EXPOSE 7860
+EXPOSE 8989
 EXPOSE 10000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:${PORT:-10000}/api/settings || exit 1
+  CMD curl -f http://localhost:${PORT:-7860}/api/settings || exit 1
 
 # Start the unified Node.js server engine
 CMD ["npm", "start"]
