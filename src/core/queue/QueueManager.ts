@@ -300,13 +300,35 @@ export class QueueManager {
         history.setTask(task, true);
         this.emit('DOWNLOAD_STATUS_CHANGED', { id: task.id, status: 'completed' });
         this.checkQueue();
-      }).catch((err) => {
+      }).catch(async (err) => {
         const currentTask = history.getTask(task.id);
         this.activeDownloaders.delete(task.id);
         // If task was paused or canceled intentionally, suppress error
         if (err?.message === 'CANCELED_OR_PAUSED' || (currentTask && currentTask.status === 'paused')) {
           return;
         }
+
+        console.warn(`MediaGrabber failed for ${task.id} (${err?.message}). Attempting automatic fallback to Cloud Stream Resolver...`);
+        try {
+          const directStreamUrl = await LinkResolver.resolveMediaDirectUrl(
+            task.originalUrl || task.url,
+            task.qualityLabel || task.mediaFormat || '720p',
+            task.audioOnly
+          );
+
+          if (directStreamUrl) {
+            console.log(`Cloud Stream Resolver succeeded for ${task.id}! Downloading via multi-threaded engine...`);
+            task.url = directStreamUrl;
+            task.isMediaStream = false;
+            task.status = 'queued';
+            history.setTask(task, false);
+            this.startTask(task.id);
+            return;
+          }
+        } catch (fallbackErr) {
+          console.warn('Fallback stream resolver failed:', fallbackErr);
+        }
+
         task.status = 'error';
         task.error = err?.message || 'Media download error';
         task.speed = 0;

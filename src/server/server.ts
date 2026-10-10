@@ -8,11 +8,11 @@ import path from 'path';
 dns.setDefaultResultOrder('ipv4first');
 import fs from 'fs';
 import os from 'os';
-import { exec } from 'child_process';
+import { exec, spawnSync } from 'child_process';
 import { ConfigStore } from '../core/storage/ConfigStore.js';
 import { HistoryStore } from '../core/storage/HistoryStore.js';
 import { QueueManager } from '../core/queue/QueueManager.js';
-import { MediaGrabber } from '../core/media/MediaGrabber.js';
+import { MediaGrabber, autoEnsureYtDlp, isFfmpegAvailable, getYtDlpExecution } from '../core/media/MediaGrabber.js';
 import { LinkResolver } from '../core/resolver/LinkResolver.js';
 import { ClickNLoadServer } from './clicknload.js';
 import { WebSocketManager } from './websocket.js';
@@ -37,6 +37,10 @@ if (configStore.getSettings().clickNLoadEnabled) {
 }
 
 // REST Endpoints
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'CLAG Downloader', time: Date.now() });
+});
+
 app.get('/api/downloads', (_req, res) => {
   res.json(historyStore.getAllTasks());
 });
@@ -398,6 +402,48 @@ app.get('/api/system/stats', (_req, res) => {
   });
 });
 
+app.get('/api/system/diag', async (_req, res) => {
+  const currentYt = getYtDlpExecution();
+  let ytVersion = 'not found';
+  try {
+    const test = spawnSync(currentYt.command, [...currentYt.baseArgs, '--version'], { timeout: 3000 });
+    if (test.status === 0) ytVersion = test.stdout.toString().trim();
+  } catch {}
+
+  let ffmpegVersion = 'not found';
+  try {
+    const test = spawnSync('ffmpeg', ['-version'], { timeout: 3000 });
+    if (test.status === 0) ffmpegVersion = test.stdout.toString().split('\n')[0].trim();
+  } catch {}
+
+  res.json({
+    platform: process.platform,
+    nodeVersion: process.version,
+    ytDlp: {
+      command: currentYt.command,
+      baseArgs: currentYt.baseArgs,
+      version: ytVersion,
+      available: ytVersion !== 'not found',
+    },
+    ffmpeg: {
+      available: isFfmpegAvailable(),
+      version: ffmpegVersion,
+    },
+    downloadDir: configStore.getSettings().downloadDir,
+    uptime: Math.round(process.uptime()),
+    cwd: process.cwd(),
+  });
+});
+
+app.post('/api/system/autofix', async (_req, res) => {
+  try {
+    const bin = await autoEnsureYtDlp();
+    res.json({ success: true, installedYtDlp: bin });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/system/open', (req, res) => {
   const { path: targetPath, type, action } = req.body;
   if (!targetPath) {
@@ -508,4 +554,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  Network/LAN:  http://0.0.0.0:${PORT}`);
   console.log(`  WebSocket:    ws://localhost:${PORT}/ws`);
   console.log(`====================================================`);
+
+  // Asynchronously ensure yt-dlp binary is available
+  autoEnsureYtDlp().catch(() => {});
 });

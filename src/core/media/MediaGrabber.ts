@@ -1,44 +1,148 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { MediaProbeResult, MediaFormatOption, PlaylistEntryItem } from '../../types/index.js';
 import { LinkResolver } from '../resolver/LinkResolver.js';
 
+let resolvedYtDlp: { command: string; baseArgs: string[] } | null = null;
+let hasFfmpegCache: boolean | null = null;
+
+export function isFfmpegAvailable(): boolean {
+  if (hasFfmpegCache !== null) return hasFfmpegCache;
+  try {
+    const res = spawnSync('ffmpeg', ['-version'], { timeout: 3000 });
+    hasFfmpegCache = res.status === 0;
+  } catch {
+    hasFfmpegCache = false;
+  }
+  return hasFfmpegCache;
+}
+
+export function getYtDlpExecution(): { command: string; baseArgs: string[] } {
+  if (resolvedYtDlp) return resolvedYtDlp;
+
+  // 1. Explicit env var
+  if (process.env.YT_DLP_BIN && fs.existsSync(process.env.YT_DLP_BIN)) {
+    resolvedYtDlp = { command: process.env.YT_DLP_BIN, baseArgs: [] };
+    return resolvedYtDlp;
+  }
+
+  // 2. Local bin directory in project or home
+  const localBinPaths = [
+    path.join(process.cwd(), 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'),
+    path.join(os.homedir(), '.local', 'bin', 'yt-dlp'),
+    path.join(os.homedir(), 'bin', 'yt-dlp'),
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+  ];
+  for (const binPath of localBinPaths) {
+    try {
+      if (fs.existsSync(binPath)) {
+        const res = spawnSync(binPath, ['--version'], { timeout: 3000 });
+        if (res.status === 0) {
+          resolvedYtDlp = { command: binPath, baseArgs: [] };
+          return resolvedYtDlp;
+        }
+      }
+    } catch {}
+  }
+
+  // 3. System 'yt-dlp' executable in PATH
+  try {
+    const res = spawnSync('yt-dlp', ['--version'], { timeout: 3000 });
+    if (res.status === 0) {
+      resolvedYtDlp = { command: 'yt-dlp', baseArgs: [] };
+      return resolvedYtDlp;
+    }
+  } catch {}
+
+  // 4. Check python3 -m yt_dlp or python -m yt_dlp
+  const pyCandidates = process.platform === 'win32' ? ['python', 'python3', 'py'] : ['python3', 'python'];
+  for (const py of pyCandidates) {
+    try {
+      const res = spawnSync(py, ['-m', 'yt_dlp', '--version'], { timeout: 3000 });
+      if (res.status === 0) {
+        resolvedYtDlp = { command: py, baseArgs: ['-m', 'yt_dlp'] };
+        return resolvedYtDlp;
+      }
+    } catch {}
+  }
+
+  // Fallback to default python
+  const defaultPy = process.platform === 'win32' ? 'python' : 'python3';
+  return { command: defaultPy, baseArgs: ['-m', 'yt_dlp'] };
+}
+
+export async function autoEnsureYtDlp(): Promise<string | null> {
+  const current = getYtDlpExecution();
+  try {
+    const test = spawnSync(current.command, [...current.baseArgs, '--version'], { timeout: 3000 });
+    if (test.status === 0) {
+      return current.command;
+    }
+  } catch {}
+
+  // Auto-download standalone binary on Linux
+  if (process.platform === 'linux' || process.platform === 'darwin') {
+    try {
+      const binDir = path.join(process.cwd(), 'bin');
+      if (!fs.existsSync(binDir)) fs.mkdirSync(binDir, { recursive: true });
+      const targetBin = path.join(binDir, 'yt-dlp');
+      console.log('CLAG: Downloading standalone yt-dlp binary from GitHub Releases...');
+      const dlUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+      const res = await fetch(dlUrl, { redirect: 'follow' });
+      if (res.ok) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        fs.writeFileSync(targetBin, buf);
+        fs.chmodSync(targetBin, 0o755);
+        console.log('CLAG: Successfully installed standalone yt-dlp at:', targetBin);
+        resolvedYtDlp = { command: targetBin, baseArgs: [] };
+        return targetBin;
+      }
+    } catch (e: any) {
+      console.warn('CLAG: Could not auto-download yt-dlp:', e.message);
+    }
+  }
+  return null;
+}
+
 function cleanYtDlpError(raw: string): string {
-  if (!raw) return '';
+  if (!raw || !raw.trim()) return 'Process exited with error';
   const lines = raw
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith('Deprecated Feature:') && !l.includes('Please update to Python') && !l.includes('See  https://github.com/yt-dlp'));
-  const errorLines = lines.filter((l) => l.startsWith('ERROR:') || l.includes('Error:'));
+  const errorLines = lines.filter((l) => 
+    l.startsWith('ERROR:') || 
+    l.includes('Error:') || 
+    l.includes('No module named') || 
+    l.includes('Sign in') || 
+    l.includes('confirm you') || 
+    l.includes('bot')
+  );
   if (errorLines.length > 0) {
-    return errorLines.join('; ');
+    return errorLines.map(l => l.replace(/^ERROR:\s*/i, '')).join('; ');
   }
-  return lines.join('; ') || 'Process exited with error';
-}
-
-function getPythonCommand(): string {
-  if (process.env.PYTHON_BIN) return process.env.PYTHON_BIN;
-  return process.platform === 'win32' ? 'python' : 'python3';
+  return lines.slice(-2).join('; ') || 'Process exited with error';
 }
 
 export class MediaGrabber {
   public static async probePlaylist(url: string, limit: number = 60): Promise<MediaProbeResult> {
     return new Promise((resolve, reject) => {
+      const execInfo = getYtDlpExecution();
       const args = [
-        '-m', 'yt_dlp',
+        ...execInfo.baseArgs,
         '--flat-playlist',
         '--dump-single-json',
         '--playlist-end', limit.toString(),
         '--skip-download',
-        '--force-ipv4',
-        '--remote-components', 'ejs:github',
-        '--js-runtimes', 'node',
+        '--extractor-args', 'youtube:player_client=android,web',
         '--socket-timeout', '15',
         url,
       ];
 
-      const child = spawn(getPythonCommand(), args, { windowsHide: true });
+      const child = spawn(execInfo.command, args, { windowsHide: true });
       let stdout = '';
       let stderr = '';
 
@@ -113,20 +217,19 @@ export class MediaGrabber {
     }
 
     return new Promise((resolve, reject) => {
+      const execInfo = getYtDlpExecution();
       const args = [
-        '-m', 'yt_dlp',
+        ...execInfo.baseArgs,
         '--dump-json',
         '--no-playlist',
         '--no-warnings',
         '--skip-download',
-        '--force-ipv4',
-        '--remote-components', 'ejs:github',
-        '--js-runtimes', 'node',
+        '--extractor-args', 'youtube:player_client=android,web',
         '--socket-timeout', '15',
         url,
       ];
 
-      const child = spawn(getPythonCommand(), args, { windowsHide: true });
+      const child = spawn(execInfo.command, args, { windowsHide: true });
       let stdout = '';
       let stderr = '';
 
@@ -432,22 +535,23 @@ export class MediaGrabber {
       const parsedPath = path.parse(outputPath);
       const outputTemplate = path.join(parsedPath.dir, `${parsedPath.name}.%(ext)s`);
 
+      const execInfo = getYtDlpExecution();
+      const hasFfmpeg = isFfmpegAvailable();
+
       const args = [
-        '-m', 'yt_dlp',
+        ...execInfo.baseArgs,
         '--newline',
         '--no-playlist',
         '--no-warnings',
         '--continue',                       // Resume partially downloaded files
-        '--force-ipv4',
-        '--remote-components', 'ejs:github', // Automatically resolve modern YouTube JS challenge
-        '--js-runtimes', 'node',            // Run challenge solver via Node.js
-        '-N', '16',                         // 16 parallel fragment streams
+        '--extractor-args', 'youtube:player_client=android,web',
+        '-N', '8',                          // 8 parallel fragment streams
         '-i',                               // Ignore download errors on non-essential components
         '--http-chunk-size', '10M',         // 10MB chunking bypasses YouTube bandwidth throttle
         '--buffer-size', '1024K',           // 1MB disk write buffer
         '--socket-timeout', '15',
-        '--retries', '10',
-        '--fragment-retries', '10',
+        '--retries', '8',
+        '--fragment-retries', '8',
         '-o', outputTemplate,
       ];
 
@@ -466,46 +570,64 @@ export class MediaGrabber {
           '--write-auto-subs',
           '--sub-lang', langParam,
           '--sub-format', 'srt/vtt/best',
-          '--convert-subs', 'srt',
-          '--sleep-subtitles', '2',
+          '--sleep-subtitles', '1',
           '--no-abort-on-error'
         );
+
+        if (hasFfmpeg) {
+          args.push('--convert-subs', 'srt');
+        }
       }
 
       if (audioOnly) {
-        args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+        if (hasFfmpeg) {
+          args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
+        } else {
+          args.push('-f', 'bestaudio[ext=m4a]/bestaudio/best');
+        }
       } else {
-        args.push('--merge-output-format', 'mp4');
-        if (formatId) {
-          let resolvedFormat = formatId;
-          // Map user-friendly quality aliases across playlists and single downloads
-          if (formatId === '1080p' || formatId === 'high') {
-            resolvedFormat = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]';
-          } else if (formatId === '720p' || formatId === 'medium') {
-            resolvedFormat = 'bestvideo[height<=720]+bestaudio/best[height<=720]';
-          } else if (formatId === '480p' || formatId === 'low') {
-            resolvedFormat = 'bestvideo[height<=480]+bestaudio/best[height<=480]';
-          } else if (formatId === '360p') {
-            resolvedFormat = 'bestvideo[height<=360]+bestaudio/best[height<=360]';
-          } else if (formatId === 'best' || formatId === '4k') {
-            resolvedFormat = 'bestvideo+bestaudio/best';
-          }
+        if (hasFfmpeg) {
+          args.push('--merge-output-format', 'mp4');
+          if (formatId) {
+            let resolvedFormat = formatId;
+            // Map user-friendly quality aliases across playlists and single downloads
+            if (formatId === '1080p' || formatId === 'high') {
+              resolvedFormat = 'bestvideo[height<=1080]+bestaudio/best[height<=1080]';
+            } else if (formatId === '720p' || formatId === 'medium') {
+              resolvedFormat = 'bestvideo[height<=720]+bestaudio/best[height<=720]';
+            } else if (formatId === '480p' || formatId === 'low') {
+              resolvedFormat = 'bestvideo[height<=480]+bestaudio/best[height<=480]';
+            } else if (formatId === '360p') {
+              resolvedFormat = 'bestvideo[height<=360]+bestaudio/best[height<=360]';
+            } else if (formatId === 'best' || formatId === '4k') {
+              resolvedFormat = 'bestvideo+bestaudio/best';
+            }
 
-          if (resolvedFormat.includes('+') || resolvedFormat.includes('best') || resolvedFormat.includes('[')) {
-            args.push('-f', resolvedFormat);
+            if (resolvedFormat.includes('+') || resolvedFormat.includes('best') || resolvedFormat.includes('[')) {
+              args.push('-f', resolvedFormat);
+            } else {
+              // Guarantee audio track: prefer AAC M4A for universal player compatibility
+              args.push('-f', `${resolvedFormat}+bestaudio[ext=m4a]/bestaudio/best`);
+            }
           } else {
-            // Guarantee audio track: prefer AAC M4A for universal player compatibility
-            args.push('-f', `${resolvedFormat}+bestaudio[ext=m4a]/bestaudio/best`);
+            // Best video + best audio muxed into mp4 (highest resolution available: 4K, 1440p, 1080p)
+            args.push('-f', 'bestvideo+bestaudio/best');
           }
         } else {
-          // Best video + best audio muxed into mp4 (highest resolution available: 4K, 1440p, 1080p)
-          args.push('-f', 'bestvideo+bestaudio/best');
+          // Fallback when FFmpeg is not installed: choose pre-muxed single progressive stream containing both audio & video
+          if (formatId === '720p' || formatId === 'medium') {
+            args.push('-f', 'best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best');
+          } else if (formatId === '480p' || formatId === 'low' || formatId === '360p') {
+            args.push('-f', 'best[height<=480][ext=mp4]/best[height<=480]/best[ext=mp4]/best');
+          } else {
+            args.push('-f', 'best[ext=mp4]/best');
+          }
         }
       }
 
       args.push(url);
 
-      childProcess = spawn(getPythonCommand(), args, { windowsHide: true });
+      childProcess = spawn(execInfo.command, args, { windowsHide: true });
 
       let lastError = '';
       let lastProgressTime = 0;

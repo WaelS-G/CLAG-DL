@@ -130,4 +130,32 @@ export class LinkResolver {
       return false;
     }
   }
+
+  public static async resolveMediaDirectUrl(url: string, format: string = '720p', audioOnly: boolean = false): Promise<string | null> {
+    try {
+      const fmt = audioOnly ? 'mp3' : (format.includes('720') ? '720' : format.includes('480') ? '480' : format.includes('360') ? '360' : '1080');
+      const initRes = await fetch(`https://loader.to/ajax/download.php?format=${fmt}&url=${encodeURIComponent(url)}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CLAG/1.0' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const init = (await initRes.json()) as any;
+      if (!init || !init.id) return null;
+
+      const pollUrl = init.progress_url || `https://lto2.affadaffa.com/api/progress?id=${init.id}`;
+      for (let i = 0; i < 6; i++) {
+        await new Promise((r) => setTimeout(r, 1200));
+        try {
+          const pRes = await fetch(pollUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) CLAG/1.0' },
+            signal: AbortSignal.timeout(4000),
+          });
+          const p = (await pRes.json()) as any;
+          if (p?.success === 1 && p?.download_url) {
+            return p.download_url;
+          }
+        } catch {}
+      }
+    } catch {}
+    return null;
+  }
 }

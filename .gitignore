@@ -3,11 +3,14 @@ node_modules/
 .pnp
 .pnp.js
 
-# Production output (built by Vercel / build runner)
-dist/
+# Production output
+dist/exe/
+dist/client/
+dist/web/
 dist_client/
 dist_electron/
 build/
+*.exe
 
 # Python artifacts
 __pycache__/
