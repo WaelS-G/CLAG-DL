@@ -164,3 +164,7 @@ CLAG Downloader/
 3. **Python Interactive CLI**: Terminal tool for power users (`python -m src.python.clag_cli`).
 4. **Browser Extension**: Manifest V3 extension in `extension/` or `dist/extension/clag-downloader-extension.zip`.
 5. **Cloud Deployment (Vercel)**: 1-click cloud deployment via `run.bat` option `[8]` (`npx vercel --prod`) or by uploading `dist/web/`.
+6. **Cloud Container Backend (Render.com Free Web Service)**: Full-compute persistent backend container (`Dockerfile` + `render.yaml`) bundling Node.js 20, Python 3, `yt-dlp`, and `FFmpeg` on Debian Bookworm:
+   - **Render Free Tier Benefits**: 750 free instance hours/month, 512 MB RAM, free SSL certificate, persistent WebSockets, 100 GB/month egress bandwidth.
+   - **Server Endpoints**: Exposes `GET /api/downloads/:id/file` for 1-tap browser/phone attachment downloading and `GET /api/downloads/:id/stream` for HTTP 206 partial content streaming directly in the UI.
+   - **Infrastructure as Code**: 1-click provisioning via root `render.yaml` Blueprint.

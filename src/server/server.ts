@@ -86,6 +86,120 @@ app.delete('/api/downloads/:id', (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/downloads/:id/file', (req, res) => {
+  const task = historyStore.getTask(req.params.id);
+  if (!task) {
+    return res.status(404).json({ error: 'Download task not found' });
+  }
+
+  const fileType = (req.query.type as string) || 'media';
+  let targetPath = task.savePath;
+
+  if (fileType === 'subtitles-text' && task.subtitlesTextPath) {
+    targetPath = task.subtitlesTextPath;
+  } else if (fileType === 'subtitles-timestamps' && task.subtitlesTimestampsPath) {
+    targetPath = task.subtitlesTimestampsPath;
+  } else if (fileType === 'subtitles-srt' && task.subtitlesPath) {
+    if (fs.existsSync(task.subtitlesPath) && fs.statSync(task.subtitlesPath).isFile()) {
+      targetPath = task.subtitlesPath;
+    } else if (fs.existsSync(task.subtitlesPath) && fs.statSync(task.subtitlesPath).isDirectory()) {
+      const srt = fs.readdirSync(task.subtitlesPath).find(f => f.endsWith('.srt'));
+      if (srt) targetPath = path.join(task.subtitlesPath, srt);
+    }
+  }
+
+  // If path doesn't exist directly, check candidate media extensions
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    const dir = path.dirname(task.savePath || '');
+    const base = path.basename(task.savePath || '', path.extname(task.savePath || ''));
+    let found = false;
+    for (const ext of ['.mp4', '.mp3', '.mkv', '.webm']) {
+      const cand = path.join(dir, `${base}${ext}`);
+      if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+        targetPath = cand;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      return res.status(404).json({ error: 'File not found on disk', path: targetPath });
+    }
+  }
+
+  const stat = fs.statSync(targetPath);
+  if (stat.isDirectory()) {
+    const files = fs.readdirSync(targetPath);
+    const media = files.find(f => /\.(mp4|mp3|mkv|webm|avi|mov|flv)$/i.test(f));
+    if (media) {
+      targetPath = path.join(targetPath, media);
+    } else {
+      return res.status(400).json({ error: 'Directory contains no media file' });
+    }
+  }
+
+  const filename = path.basename(targetPath);
+  res.download(targetPath, filename);
+});
+
+app.get('/api/downloads/:id/stream', (req, res) => {
+  const task = historyStore.getTask(req.params.id);
+  if (!task) {
+    return res.status(404).json({ error: 'Download task not found' });
+  }
+
+  let targetPath = task.savePath;
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    const dir = path.dirname(task.savePath || '');
+    const base = path.basename(task.savePath || '', path.extname(task.savePath || ''));
+    for (const ext of ['.mp4', '.mp3', '.mkv', '.webm']) {
+      const cand = path.join(dir, `${base}${ext}`);
+      if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+        targetPath = cand;
+        break;
+      }
+    }
+  }
+
+  if (!targetPath || !fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+    return res.status(404).json({ error: 'Media file not found for streaming' });
+  }
+
+  const stat = fs.statSync(targetPath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+
+  const ext = path.extname(targetPath).toLowerCase();
+  let contentType = 'video/mp4';
+  if (ext === '.mp3') contentType = 'audio/mpeg';
+  else if (ext === '.webm') contentType = 'video/webm';
+  else if (ext === '.mkv') contentType = 'video/x-matroska';
+  else if (ext === '.m4a') contentType = 'audio/mp4';
+
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const chunksize = end - start + 1;
+    const file = fs.createReadStream(targetPath, { start, end });
+    const head = {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunksize,
+      'Content-Type': contentType,
+    };
+    res.writeHead(206, head);
+    file.pipe(res);
+  } else {
+    const head = {
+      'Content-Length': fileSize,
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
+    };
+    res.writeHead(200, head);
+    fs.createReadStream(targetPath).pipe(res);
+  }
+});
+
 app.post('/api/probe', async (req, res) => {
   const { url } = req.body;
   if (!url) {
@@ -337,7 +451,7 @@ if (clientDist) {
   });
 }
 
-const PORT = configStore.getSettings().apiPort || 8989;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : (configStore.getSettings().apiPort || 8989);
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`====================================================`);
   console.log(`  CLAG Downloader Engine running on:`);

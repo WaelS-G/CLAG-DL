@@ -17,6 +17,11 @@ function cleanYtDlpError(raw: string): string {
   return lines.join('; ') || 'Process exited with error';
 }
 
+function getPythonCommand(): string {
+  if (process.env.PYTHON_BIN) return process.env.PYTHON_BIN;
+  return process.platform === 'win32' ? 'python' : 'python3';
+}
+
 export class MediaGrabber {
   public static async probePlaylist(url: string, limit: number = 60): Promise<MediaProbeResult> {
     return new Promise((resolve, reject) => {
@@ -33,7 +38,7 @@ export class MediaGrabber {
         url,
       ];
 
-      const child = spawn('python', args, { windowsHide: true });
+      const child = spawn(getPythonCommand(), args, { windowsHide: true });
       let stdout = '';
       let stderr = '';
 
@@ -121,7 +126,7 @@ export class MediaGrabber {
         url,
       ];
 
-      const child = spawn('python', args, { windowsHide: true });
+      const child = spawn(getPythonCommand(), args, { windowsHide: true });
       let stdout = '';
       let stderr = '';
 
@@ -500,7 +505,7 @@ export class MediaGrabber {
 
       args.push(url);
 
-      childProcess = spawn('python', args, { windowsHide: true });
+      childProcess = spawn(getPythonCommand(), args, { windowsHide: true });
 
       let lastError = '';
       let lastProgressTime = 0;

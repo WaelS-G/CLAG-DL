@@ -161,6 +161,125 @@ class ClagHttpHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(tasks_copy).encode('utf-8'))
             return
 
+        if path.startswith('/api/downloads/') and (path.endswith('/file') or path.endswith('/stream')):
+            parts = path.strip('/').split('/')
+            task_id = parts[2] if len(parts) >= 3 else ''
+            target_task = None
+            with DATA_LOCK:
+                for t in TASKS:
+                    if t.get('id') == task_id:
+                        target_task = dict(t)
+                        break
+
+            if not target_task:
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            query = urllib.parse.parse_qs(parsed.query)
+            file_type = query.get('type', ['media'])[0]
+            target_path = target_task.get('savePath', '')
+
+            if file_type == 'subtitles-text' and target_task.get('subtitlesTextPath'):
+                target_path = target_task.get('subtitlesTextPath')
+            elif file_type == 'subtitles-timestamps' and target_task.get('subtitlesTimestampsPath'):
+                target_path = target_task.get('subtitlesTimestampsPath')
+            elif file_type == 'subtitles-srt' and target_task.get('subtitlesPath'):
+                sp = target_task.get('subtitlesPath')
+                if os.path.isfile(sp):
+                    target_path = sp
+                elif os.path.isdir(sp):
+                    srts = [f for f in os.listdir(sp) if f.endswith('.srt')]
+                    if srts:
+                        target_path = os.path.join(sp, srts[0])
+
+            if not target_path or not os.path.exists(target_path):
+                dir_name = os.path.dirname(target_task.get('savePath', ''))
+                base_name = os.path.splitext(os.path.basename(target_task.get('savePath', '')))[0]
+                for ext in ['.mp4', '.mp3', '.mkv', '.webm']:
+                    cand = os.path.join(dir_name, f"{base_name}{ext}")
+                    if os.path.isfile(cand):
+                        target_path = cand
+                        break
+
+            if not target_path or not os.path.exists(target_path):
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            if os.path.isdir(target_path):
+                media_files = [f for f in os.listdir(target_path) if f.lower().endswith(('.mp4', '.mp3', '.mkv', '.webm', '.avi', '.mov'))]
+                if media_files:
+                    target_path = os.path.join(target_path, media_files[0])
+                else:
+                    self.send_response(400)
+                    self.end_headers()
+                    return
+
+            file_size = os.path.getsize(target_path)
+            fn = os.path.basename(target_path)
+            mime, _ = mimetypes.guess_type(target_path)
+            mime = mime or 'application/octet-stream'
+
+            if path.endswith('/file'):
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Content-Disposition', f'attachment; filename="{urllib.parse.quote(fn)}"')
+                self.send_header('Content-Length', str(file_size))
+                self.send_cors_headers()
+                self.end_headers()
+                try:
+                    with open(target_path, 'rb') as f:
+                        shutil.copyfileobj(f, self.wfile)
+                except Exception:
+                    pass
+                return
+
+            if path.endswith('/stream'):
+                range_header = self.headers.get('Range')
+                if range_header:
+                    import re
+                    range_match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+                    if range_match:
+                        start = int(range_match.group(1))
+                        end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+                        length = end - start + 1
+                        self.send_response(206)
+                        self.send_header('Content-Type', mime)
+                        self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
+                        self.send_header('Accept-Ranges', 'bytes')
+                        self.send_header('Content-Length', str(length))
+                        self.send_cors_headers()
+                        self.end_headers()
+                        try:
+                            with open(target_path, 'rb') as f:
+                                f.seek(start)
+                                remaining = length
+                                chunk_size = 64 * 1024
+                                while remaining > 0:
+                                    to_read = min(remaining, chunk_size)
+                                    buf = f.read(to_read)
+                                    if not buf:
+                                        break
+                                    self.wfile.write(buf)
+                                    remaining -= len(buf)
+                        except Exception:
+                            pass
+                        return
+
+                self.send_response(200)
+                self.send_header('Content-Type', mime)
+                self.send_header('Accept-Ranges', 'bytes')
+                self.send_header('Content-Length', str(file_size))
+                self.send_cors_headers()
+                self.end_headers()
+                try:
+                    with open(target_path, 'rb') as f:
+                        shutil.copyfileobj(f, self.wfile)
+                except Exception:
+                    pass
+                return
+
         if path == '/api/system/read':
             query = urllib.parse.parse_qs(parsed.query)
             target_file = query.get('path', [''])[0]

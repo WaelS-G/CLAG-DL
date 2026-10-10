@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+.git
+.gitignore
+*.log
+data/
+venv/
+.venv/
+extension/
+dist_client/
+dist_electron/

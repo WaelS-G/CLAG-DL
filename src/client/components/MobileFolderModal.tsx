@@ -28,7 +28,8 @@ export const MobileFolderModal: React.FC<MobileFolderModalProps> = ({ task, onCl
 
   const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
-  const fileUrl = task.blobUrl || task.originalUrl || task.url;
+  const isServerTask = task.status === 'completed';
+  const fileUrl = isServerTask ? `/api/downloads/${task.id}/file` : (task.blobUrl || task.originalUrl || task.url);
 
   // Open native Android file manager / Downloads app via Android Intent
   const handleOpenAndroidDownloads = () => {

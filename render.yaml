@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: clag-downloader
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: main
+    healthCheckPath: /api/settings
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production

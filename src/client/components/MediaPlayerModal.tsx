@@ -14,7 +14,9 @@ export const MediaPlayerModal: React.FC<MediaPlayerModalProps> = ({ task, onClos
   if (!task) return null;
 
   const isAudio = task.audioOnly || task.category === 'audio';
-  const streamUrl = task.blobUrl || task.originalUrl || task.url;
+  const isCompletedServerTask = task.status === 'completed';
+  const streamUrl = isCompletedServerTask ? `/api/downloads/${task.id}/stream` : (task.blobUrl || task.originalUrl || task.url);
+  const fileDownloadUrl = `/api/downloads/${task.id}/file`;
   const canShare = typeof navigator !== 'undefined' && !!navigator.share;
 
   const handleShare = async () => {
@@ -106,6 +108,15 @@ export const MediaPlayerModal: React.FC<MediaPlayerModalProps> = ({ task, onClos
           </div>
 
           <div className="flex items-center gap-2">
+            <a
+              href={fileDownloadUrl}
+              download={task.filename}
+              className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs flex items-center gap-1.5 shadow-md transition-all min-h-[40px]"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Save to Device</span>
+            </a>
+
             <button
               onClick={handleShare}
               className="px-3 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 text-xs font-medium flex items-center gap-1.5 transition-colors min-h-[40px]"

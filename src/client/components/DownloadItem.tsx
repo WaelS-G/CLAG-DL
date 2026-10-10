@@ -18,7 +18,8 @@ import {
   Cpu,
   PlayCircle,
   Clock,
-  FolderTree
+  FolderTree,
+  Download
 } from 'lucide-react';
 import { DownloadTaskData } from '../../types/index.js';
 import { ChunkBar } from './ChunkBar';
@@ -302,6 +303,15 @@ export const DownloadItem: React.FC<DownloadItemProps> = ({
                   <PlayCircle className="w-4 h-4 group-hover:scale-110 transition-transform text-cyan-300" />
                 </button>
               )}
+              {/* Save / Download file directly to device / mobile */}
+              <a
+                href={`/api/downloads/${task.id}/file`}
+                download={task.filename}
+                className="p-2 rounded-xl bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-all min-w-[40px] min-h-[40px] flex items-center justify-center group"
+                title="Save / Download File to Device"
+              >
+                <Download className="w-4 h-4 group-hover:scale-110 transition-transform text-blue-300" />
+              </a>
               {/* Show media file highlighted in folder or show device location modal */}
               <button
                 onClick={() => onOpenFolder(task.savePath, task)}

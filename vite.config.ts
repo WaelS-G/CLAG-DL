@@ -8,7 +8,7 @@ export default defineConfig({
   publicDir: '../../public',
   build: {
     outDir: '../../dist',
-    emptyOutDir: true,
+    emptyOutDir: false,
   },
   server: {
     port: 5173,

@@ -87,11 +87,16 @@ CLAG Downloader comes in several formats designed for different workflows:
 5. In the browser menu, tap **"Add to Home Screen"** or **"Install App"**.
 6. CLAG Downloader will launch in fullscreen like a native phone application. You can monitor progress, pause/resume, and queue downloads from your couch!
 
-### B. Cloud & Deployed Mode (Vercel / Netlify)
-- When using the deployed web version on a phone, URL probing works across YouTube, TikTok, Vimeo, SoundCloud, Twitter/X, Instagram, and direct links via smart serverless oEmbed discovery and client-side stream resolution.
+### B. Cloud & Persistent Backend Mode (Render.com Free Web Service)
+- **100% Free 24/7 Cloud Backend**: Deploying to Render.com via the root `Dockerfile` and `render.yaml` Blueprint provides a persistent container with Node.js 20, Python 3, `yt-dlp`, and `FFmpeg` on the free tier (750 free hours/month, 512 MB RAM, free SSL).
+- **Direct Device File Delivery (📥)**: Every completed download card features a direct **"Save / Download File to Device"** button (`/api/downloads/:id/file`). Tapping this button on your phone or computer immediately triggers a direct browser download into your device's native Downloads directory.
+- **In-App Streaming (▶)**: Tapping the Play button streams the completed video or audio directly in your browser with seekable HTTP 206 range streaming.
+
+### C. Serverless Cloud Mode (Vercel / Netlify)
+- When using a serverless deployment, URL probing works across YouTube, TikTok, Vimeo, SoundCloud, Twitter/X, Instagram, and direct links via smart serverless oEmbed discovery and client-side stream resolution.
 - Direct file downloads can be initiated immediately with parallel range chunking.
 
-### C. Opening Files & Folders on Mobile (Native File Explorer & Permissions)
+### D. Opening Files & Folders on Mobile (Native File Explorer & Permissions)
 - **Open File Explorer on Android (📱)**: Tapping "Show in Folder" on Android gives you a 1-tap **"Open Android Downloads App"** button powered by native Android Intents (`android.intent.action.VIEW_DOWNLOADS`), immediately opening your phone's native Google Files or Downloads app!
 - **Open Files App on iOS (🍏)**: On iPhone and iPad, tapping "Show in Folder" triggers the Apple Files app directly via the system URL scheme (`shareddocuments://`), launching you straight into your iOS Files browser!
 - **Browse Device Folders (📂)**: On supported mobile and desktop browsers, you can tap "Browse Device Folders" to use the modern File System Access API (`showDirectoryPicker`), selecting and browsing folders on your phone.

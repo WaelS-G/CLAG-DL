@@ -61,7 +61,16 @@ This boots the embedded CLAG engine and launches a native, dark-themed WebView2 
    - **Method 3 (GitHub / GitLab Integration)**: When pushing to GitHub for Vercel auto-deployments, **ensure the `api/` directory is committed**! The serverless function `/api/resolve` handles CORS-free stream extraction from YouTube, TikTok, Instagram, Twitter/X, and Vimeo. Without the `api/` folder, Vercel will serve only static files and `/api/resolve` will return 404.
    - When opened on Vercel (`https://your-project.vercel.app` or `https://clag-dl.vercel.app`), CLAG automatically operates in **In-Browser Web Mode**, allowing users on phones, tablets, or computers to resolve YouTube, TikTok, Instagram, Twitter/X, and direct streams into MP4/MP3 files saved directly to their device without opening external tabs!
 
-### 3. Chrome / Edge / Brave Browser Extension (Manifest V3)
+### 2.5 Deploying to Render.com (100% Free Persistent Cloud Docker Backend)
+Render.com offers a **100% Free Web Service tier** (750 free instance hours/month, 512 MB RAM, free TLS/SSL, native Docker support, persistent WebSockets, 100 GB/month bandwidth). This gives you a dedicated cloud backend with full `yt-dlp` and `FFmpeg` 24/7!
+
+**How to Deploy on Render in 3 Steps:**
+1. **Push your code to GitHub / GitLab**. (Ensure `Dockerfile` and `render.yaml` are at the repository root).
+2. Go to **[dashboard.render.com](https://dashboard.render.com/)**, click **"New +"** → **"Blueprint"** (or **"Web Service"**).
+3. Connect your repository. Render automatically reads `render.yaml`, detects the `Dockerfile`, and starts building your container with Node.js 20 + Python 3 + `yt-dlp` + `FFmpeg`.
+4. Your service will be live at `https://clag-downloader-xxxx.onrender.com`.
+   - On completed downloads, tap **"Save to Device"** to download the merged MP4/MP3 directly to your mobile phone or laptop.
+   - Tap **"Play"** to stream video directly in your browser.
 1. In your browser, open `chrome://extensions` (or `edge://extensions`).
 2. Toggle on **Developer mode** in the top right.
 3. Click **"Load unpacked"** and select the `extension/` folder inside this project.
