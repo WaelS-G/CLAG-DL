@@ -52,10 +52,18 @@ export class ConfigStore {
         } catch {}
       }
 
+      let loaded = { ...DEFAULT_SETTINGS };
       if (fs.existsSync(CONFIG_FILE)) {
         const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
-        return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+        loaded = { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
       }
+
+      // Cross-platform path sanitization: If running on Linux/macOS and path is a Windows path
+      if (process.platform !== 'win32' && /^[a-zA-Z]:[\\/]/.test(loaded.downloadDir)) {
+        loaded.downloadDir = path.join(os.homedir(), 'Downloads', 'CLAG');
+      }
+
+      return loaded;
     } catch (e) {
       console.error('Failed to load settings from file, using defaults', e);
     }
