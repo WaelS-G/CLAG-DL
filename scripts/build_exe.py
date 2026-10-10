@@ -13,12 +13,11 @@ def main():
     print("  CLAG Downloader - Windows Executable Builder (.exe)")
     print("=" * 60)
 
-    # 1. Build frontend bundle first
+    # 1. Build frontend bundle and sync dist folders
     print("\n[1/3] Building Client UIX Production Bundle...")
     npm_cmd = ["cmd", "/c", "npm", "run", "build"]
     ret = subprocess.run(npm_cmd, cwd=root_dir)
-    if ret.returncode != 0:
-        print("Warning: npm build failed, proceeding with existing build if present.")
+    subprocess.run(["node", "scripts/sync_web_dist.js"], cwd=root_dir)
 
     # 2. Package with PyInstaller
     print("\n[2/3] Compiling Standalone Executable with PyInstaller...")

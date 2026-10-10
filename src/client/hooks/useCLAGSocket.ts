@@ -133,8 +133,20 @@ export function useCLAGSocket() {
       };
 
       ws.onclose = () => {
-        setIsConnected(false);
-        setIsWebOnly(true);
+        fetch('/api/downloads')
+          .then((r) => {
+            if (r.ok) {
+              setIsConnected(true);
+              setIsWebOnly(false);
+            } else {
+              setIsConnected(false);
+              setIsWebOnly(true);
+            }
+          })
+          .catch(() => {
+            setIsConnected(false);
+            setIsWebOnly(true);
+          });
         reconnectTimeoutRef.current = setTimeout(connect, 4000);
       };
 
@@ -142,8 +154,20 @@ export function useCLAGSocket() {
         ws.close();
       };
     } catch (e) {
-      setIsWebOnly(true);
-      setIsConnected(false);
+      fetch('/api/downloads')
+        .then((r) => {
+          if (r.ok) {
+            setIsConnected(true);
+            setIsWebOnly(false);
+          } else {
+            setIsConnected(false);
+            setIsWebOnly(true);
+          }
+        })
+        .catch(() => {
+          setIsConnected(false);
+          setIsWebOnly(true);
+        });
     }
   }, []);
 
@@ -159,6 +183,34 @@ export function useCLAGSocket() {
     };
   }, [connect]);
 
+  // Periodic HTTP Polling fallback when WebSocket is inactive (e.g. Python Desktop / EXE mode)
+  useEffect(() => {
+    let isMounted = true;
+    const pollBackend = async () => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        return; // WebSocket takes precedence
+      }
+      try {
+        const res = await fetch('/api/downloads');
+        if (res.ok) {
+          const serverTasks = await res.json();
+          if (Array.isArray(serverTasks) && isMounted) {
+            setTasks(serverTasks);
+            setIsConnected(true);
+            setIsWebOnly(false);
+          }
+        }
+      } catch (_) {}
+    };
+
+    pollBackend();
+    const interval = setInterval(pollBackend, 1500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Recalculate total speed across active downloads
   useEffect(() => {
     const active = tasks.filter((t) => t.status === 'downloading');
@@ -170,6 +222,16 @@ export function useCLAGSocket() {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(action));
     }
+    // Also dispatch HTTP REST action for Python / non-WS backends
+    try {
+      if (action.type === 'PAUSE_DOWNLOAD') {
+        fetch(`/api/downloads/${encodeURIComponent(action.id)}/pause`, { method: 'POST' }).catch(() => {});
+      } else if (action.type === 'RESUME_DOWNLOAD') {
+        fetch(`/api/downloads/${encodeURIComponent(action.id)}/resume`, { method: 'POST' }).catch(() => {});
+      } else if (action.type === 'DELETE_DOWNLOAD') {
+        fetch(`/api/downloads/${encodeURIComponent(action.id)}`, { method: 'DELETE' }).catch(() => {});
+      }
+    } catch (_) {}
   }, []);
 
   // Real In-Browser Streaming Downloader Engine

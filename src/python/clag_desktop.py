@@ -40,21 +40,27 @@ def get_project_root():
 ACTIVE_PORT = PORT
 
 def get_client_dist_dir():
-    """Locates dist/client directory containing compiled web assets."""
+    """Locates dist/client or dist directory containing compiled web assets."""
     candidates = []
     if hasattr(sys, '_MEIPASS'):
         candidates.extend([
             os.path.join(sys._MEIPASS, 'dist', 'client'),
+            os.path.join(sys._MEIPASS, 'dist'),
             os.path.join(sys._MEIPASS, 'client'),
             sys._MEIPASS,
         ])
     root = get_project_root()
     candidates.extend([
         os.path.join(root, 'dist', 'client'),
+        os.path.join(root, 'dist'),
+        os.path.join(root, 'dist', 'web'),
         os.path.join(root, 'client'),
         os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'dist', 'client'),
+        os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'dist'),
         os.path.join(os.path.dirname(sys.executable), 'dist', 'client'),
+        os.path.join(os.path.dirname(sys.executable), 'dist'),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'dist', 'client'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'dist'),
     ])
     for cand in candidates:
         if cand and os.path.exists(os.path.join(cand, 'index.html')):
@@ -309,33 +315,35 @@ p{{color:#94a3b8;font-size:14px;line-height:1.6;}}
                 return
 
             try:
-                abs_target = os.path.abspath(target_path)
+                norm_target = os.path.normpath(os.path.abspath(target_path))
                 if action == 'folder':
-                    if os.path.exists(abs_target):
-                        if os.path.isdir(abs_target):
-                            os.startfile(abs_target)
-                        elif os.path.isfile(abs_target):
-                            subprocess.Popen(f'explorer /select,"{abs_target}"', shell=True)
+                    if os.path.exists(norm_target):
+                        if os.path.isdir(norm_target):
+                            os.startfile(norm_target)
+                        elif os.path.isfile(norm_target):
+                            subprocess.Popen(f'explorer /select,"{norm_target}"', shell=True)
                     else:
-                        self.send_response(404)
-                        self.send_header('Content-Type', 'application/json')
-                        self.send_cors_headers()
-                        self.end_headers()
-                        self.wfile.write(json.dumps({'error': 'Folder not found on disk', 'path': abs_target}).encode('utf-8'))
-                        return
+                        parent = os.path.dirname(norm_target)
+                        if os.path.exists(parent):
+                            os.startfile(parent)
+                        else:
+                            cfg = load_settings()
+                            fallback_dir = cfg.get('downloadDir', os.path.join(os.path.expanduser('~'), 'Downloads', 'CLAG'))
+                            if os.path.exists(fallback_dir):
+                                os.startfile(fallback_dir)
                 else:
                     # action == 'file': Launch file in default system viewer/player
                     target_to_open = None
-                    if os.path.isfile(abs_target):
-                        target_to_open = abs_target
-                    elif os.path.isdir(abs_target):
-                        files = os.listdir(abs_target)
+                    if os.path.isfile(norm_target):
+                        target_to_open = norm_target
+                    elif os.path.isdir(norm_target):
+                        files = os.listdir(norm_target)
                         media_files = [f for f in files if f.lower().endswith(('.mp4', '.mp3', '.mkv', '.webm', '.avi', '.mov', '.flv', '.txt', '.srt'))]
                         if media_files:
-                            target_to_open = os.path.join(abs_target, media_files[0])
+                            target_to_open = os.path.join(norm_target, media_files[0])
                     else:
-                        for ext in ['.mp4', '.mp3', '.mkv', '.webm']:
-                            cand = f"{abs_target}{ext}"
+                        for ext in ['.mp4', '.mp3', '.mkv', '.webm', '.txt', '.srt']:
+                            cand = f"{norm_target}{ext}"
                             if os.path.isfile(cand):
                                 target_to_open = cand
                                 break
@@ -343,15 +351,43 @@ p{{color:#94a3b8;font-size:14px;line-height:1.6;}}
                     if target_to_open and os.path.isfile(target_to_open):
                         os.startfile(target_to_open)
                     else:
-                        self.send_response(404)
-                        self.send_header('Content-Type', 'application/json')
-                        self.send_cors_headers()
-                        self.end_headers()
-                        self.wfile.write(json.dumps({'error': 'File not found on disk', 'path': abs_target}).encode('utf-8'))
-                        return
+                        parent = os.path.dirname(norm_target)
+                        if os.path.exists(parent):
+                            os.startfile(parent)
             except Exception as e:
                 print(f"Open error: {e}")
 
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
+            return
+
+        # Pause download route
+        if path.startswith('/api/downloads/') and path.endswith('/pause'):
+            parts = path.strip('/').split('/')
+            task_id = parts[2] if len(parts) >= 3 else ''
+            with DATA_LOCK:
+                for t in TASKS:
+                    if t.get('id') == task_id:
+                        t['status'] = 'paused'
+                        t['speed'] = 0
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
+            return
+
+        # Resume download route
+        if path.startswith('/api/downloads/') and path.endswith('/resume'):
+            parts = path.strip('/').split('/')
+            task_id = parts[2] if len(parts) >= 3 else ''
+            with DATA_LOCK:
+                for t in TASKS:
+                    if t.get('id') == task_id:
+                        t['status'] = 'downloading'
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_cors_headers()
@@ -495,6 +531,22 @@ p{{color:#94a3b8;font-size:14px;line-height:1.6;}}
             self.send_cors_headers()
             self.end_headers()
             self.wfile.write(json.dumps(saved).encode('utf-8'))
+            return
+
+    def do_DELETE(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        if path.startswith('/api/downloads/'):
+            parts = path.strip('/').split('/')
+            task_id = parts[2] if len(parts) >= 3 else ''
+            with DATA_LOCK:
+                global TASKS
+                TASKS = [t for t in TASKS if t.get('id') != task_id]
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({'success': True}).encode('utf-8'))
             return
 
         self.send_response(404)

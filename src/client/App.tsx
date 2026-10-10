@@ -90,23 +90,22 @@ export default function App() {
   }, []);
 
   const handleAddDownload = async (params: any) => {
-    if (isWebOnly || !isConnected) {
-      addBrowserDownload(params);
-    } else {
-      try {
-        const res = await fetch('/api/downloads', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(params),
-        });
+    try {
+      const res = await fetch('/api/downloads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
 
-        if (!res.ok) {
-          throw new Error('API server returned error');
-        }
-      } catch (e) {
-        addBrowserDownload(params);
+      if (res.ok) {
+        setActiveTab('transfers');
+        return;
       }
+    } catch (e) {
+      // Backend not running (e.g. standalone cloud web mode)
     }
+
+    addBrowserDownload(params);
     setActiveTab('transfers');
   };
 
@@ -130,13 +129,13 @@ export default function App() {
   const isMobile = typeof navigator !== 'undefined' && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   const handleOpenFolder = async (filePath: string, task?: DownloadTaskData) => {
-    // If on desktop connected to local core engine, try opening in OS explorer
-    if (!isMobile && !isWebOnly && isConnected && filePath) {
+    const targetPath = filePath || task?.savePath || '';
+    if (targetPath) {
       try {
         const res = await fetch('/api/system/open', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: filePath, action: 'folder' }),
+          body: JSON.stringify({ path: targetPath, action: 'folder' }),
         });
         const json = await res.json();
         if (json.success) return;
@@ -154,14 +153,16 @@ export default function App() {
     task?: DownloadTaskData,
     targetType: 'media' | 'transcript_clean' | 'transcript_timed' = 'media'
   ) => {
+    const targetPath = filePath || task?.savePath || '';
+
     // 1. If subtitles transcript requested:
     if (targetType === 'transcript_clean' || targetType === 'transcript_timed') {
-      if (!isMobile && !isWebOnly && isConnected && filePath) {
+      if (targetPath) {
         try {
           const res = await fetch('/api/system/open', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: filePath, action: 'file' }),
+            body: JSON.stringify({ path: targetPath, action: 'file' }),
           });
           const json = await res.json();
           if (json.success) return;
@@ -170,33 +171,33 @@ export default function App() {
 
       // Read transcript text and open in-app TranscriptViewerModal
       let content = '';
-      if (filePath) {
+      if (targetPath) {
         try {
-          const res = await fetch(`/api/system/read?path=${encodeURIComponent(filePath)}`);
+          const res = await fetch(`/api/system/read?path=${encodeURIComponent(targetPath)}`);
           if (res.ok) {
             content = await res.text();
           }
         } catch (e) {}
       }
       if (!content) {
-        content = `[CLAG Downloader - Subtitles Transcript]\nFilename: ${task?.filename || 'video.mp4'}\nSource URL: ${task?.originalUrl || task?.url || 'Stream'}\n\n[Transcript file saved on disk: ${filePath || 'subtitles/' + (task?.filename || 'video') + '.txt'}]\n\n(Transcript text is available above. Tap 'Download .txt' to save to your device.)`;
+        content = `[CLAG Downloader - Subtitles Transcript]\nFilename: ${task?.filename || 'video.mp4'}\nSource URL: ${task?.originalUrl || task?.url || 'Stream'}\n\n[Transcript file saved on disk: ${targetPath || 'subtitles/' + (task?.filename || 'video') + '.txt'}]\n\n(Transcript text is available above. Tap 'Download .txt' to save to your device.)`;
       }
 
       setViewingTranscript({
         title: targetType === 'transcript_clean' ? 'Clean Subtitles Transcript (.txt)' : 'Timed Subtitles Transcript (.txt)',
-        filename: filePath ? filePath.split(/[\\/]/).pop() || `${task?.filename || 'transcript'}.txt` : `${task?.filename || 'transcript'}.txt`,
+        filename: targetPath ? targetPath.split(/[\\/]/).pop() || `${task?.filename || 'transcript'}.txt` : `${task?.filename || 'transcript'}.txt`,
         text: content,
       });
       return;
     }
 
     // 2. If media file requested:
-    if (!isMobile && !isWebOnly && isConnected && filePath) {
+    if (targetPath) {
       try {
         const res = await fetch('/api/system/open', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: filePath, action: 'file' }),
+          body: JSON.stringify({ path: targetPath, action: 'file' }),
         });
         const json = await res.json();
         if (json.success) return;
